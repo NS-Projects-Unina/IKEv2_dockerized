@@ -1,0 +1,109 @@
+Configurazione VPN IKEv2:
+
+1) Eseguire lo script start_network.sh 
+
+2) L'esecuzione al punto 1) porterà alla creazione della rete Docker myvpn e dei container (nodo1 e nodo 2) oltre che alla loro esecuzione
+
+3) Accediamo ai singoli nodi su due diversi terminali attraverso i comandi : 
+
+"docker exec -it node1 bash" e "docker exec -it node2 bash"
+
+4) Installiamo sui nodi i comandi necessari:
+
+apt update && apt install -y strongswan iproute2 iputils-ping tcpdump 
+apt update && apt install -y nano 
+
+
+5) Nel container node1, modifichiamo il file /etc/ipsec.conf:
+
+nano /etc/ipsec.conf
+
+Aggiungiamo:
+
+config setup
+    charondebug="all"
+    uniqueids=yes
+
+conn ikev2-vpn
+    auto=start
+    left=192.168.1.2
+    leftid=@node1
+    leftsubnet=192.168.1.0/24
+    leftauth=psk
+    right=192.168.1.3
+    rightid=@node2
+    rightsubnet=192.168.1.0/24
+    rightauth=psk
+    ike=aes256-sha2_256-modp2048
+    esp=aes256-sha2_256
+    keyexchange=ikev2
+  
+
+6)Configurazione strongswan per generare log dettagliato per mostrare le chiavi di cifratura "in chiaro".
+
+nano /etc/strongswan.conf
+
+charon {
+    filelog {
+        charon {
+            path = /var/log/charon.log
+            time_format = %b %e %T
+            ike = 4
+            net = 3
+            enc = 4
+            debug = 4
+            
+        }
+    }
+    secrets = yes
+}
+
+
+
+7) Ora configuriamo  la chiave pre-condivisa (PSK) in /etc/ipsec.secrets:
+
+nano /etc/ipsec.secrets
+
+Aggiungiamo:
+
+@node1 @node2 : PSK "password123"
+
+8) Ripetiamo i passaggi 5) e 6) per il nodo2, scambiando gli IP e gli ID left e right 
+
+9) Riavviamo StrongSwan su entrambi i nodi:
+
+ipsec restart
+
+10) Ora utilizziamo il comando tcpdump sul nodo1 per catturare i pacchetti IPSec/IKEv2:
+
+tcpdump -i eth0 -n -s 0 -w ikev2_traffic.pcap
+
+11)Attiviamo VPN IKEv2 sul nodo 2
+
+ipsec up ikev2-vpn
+
+12) Eseguiamo il test ping dal nodo2:
+
+ping -c 10 192.168.1.2
+
+13) Stoppiamo tcpdump con CTRL+C sul nodo 1 
+
+14) Copiamo il file .pcap fuori dal container e analizzalo con Wireshark.
+
+docker cp node1:/ikev2_traffic.pcap .
+
+--------------------------------------------------------------------------------------------
+
+Altri comandi utili:
+
+
+1)ip xfrm state
+
+2)ipsec statusall
+
+
+
+--------------------------------------------------------------------------------------------
+
+
+ 
